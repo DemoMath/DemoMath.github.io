@@ -1,16 +1,183 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html>
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <meta http-equiv="Content-Style-Type" content="text/css">
-  <title></title>
-  <meta name="Generator" content="Cocoa HTML Writer">
-  <meta name="CocoaVersion" content="2487.6">
-  <style type="text/css">
-    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>运单信息展示</title>
+    <style>
+        .tabs {
+            display: flex;
+            cursor: pointer;
+            background-color: #f1f1f1;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        #tab1, #tab2 {
+            padding: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        td:nth-child(1) {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+
+        #map {
+            width: 100%;
+            height: 500px;
+        }
+    </style>
 </head>
 <body>
-<p class="p1">Hello</p>
+
+<h1>运单信息展示</h1>
+
+<ul class="tabs">
+    <li onclick="showTab('tab1')">表单</li>
+    <li onclick="showTab('tab2')">地图</li>
+</ul>
+
+<div id="tab1" class="tab-content">
+    <table id="data-table">
+        <!-- 表单数据在这里展示 -->
+    </table>
+</div>
+
+<div id="tab2" class="tab-content">
+    <div id="map"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+<script src="https://webapi.amap.com/maps?v=1.4.15&key=你的高德地图API密钥"></script>
+
+<script>
+// Tab 切换功能
+function showTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+    });
+    document.getElementById(tabId).style.display = 'block';
+}
+
+// 获取 URL 中的参数
+function getQueryParameter(param) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(param);
+}
+
+const selectedId = getQueryParameter('id');
+
+// 读取 Excel 文件并展示数据
+function loadExcelAndDisplay(id) {
+    fetch('/data/data.xlsx')
+        .then(response => response.arrayBuffer())
+        .then(data => {
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+            // 根据id筛选对应的数据
+            const selectedData = jsonData.find(item => item['id'] == id);
+            if (selectedData) {
+                displayData(selectedData);  // 展示数据
+                initMapWithRoute(selectedData);  // 在地图上显示路线
+            } else {
+                alert('未找到ID对应的数据');
+            }
+        })
+        .catch(error => console.error('Error reading excel file:', error));
+}
+
+// 表单数据展示
+function displayData(data) {
+    const table = document.getElementById('data-table');
+    table.innerHTML = ''; // 清空表格内容
+
+    Object.keys(data).forEach(key => {
+        const tr = document.createElement('tr');
+
+        const tdKey = document.createElement('td');
+        tdKey.textContent = key;  // 表格字段名称
+
+        const tdValue = document.createElement('td');
+        tdValue.textContent = data[key];  // 表格字段的值
+
+        tr.appendChild(tdKey);
+        tr.appendChild(tdValue);
+
+        table.appendChild(tr);
+    });
+}
+
+// 初始化高德地图并绘制路线
+function initMapWithRoute(data) {
+    const map = new AMap.Map('map', {
+        resizeEnable: true,
+        zoom: 10
+    });
+
+    // 使用高德地图的地理编码服务获取起运地和目的地的经纬度
+    AMap.plugin('AMap.Geocoder', function() {
+        const geocoder = new AMap.Geocoder();
+
+        // 获取起运地和目的地的地址
+        const startAddress = data['起运地'];
+        const endAddress = data['目的地'];
+
+        geocoder.getLocation(startAddress, function(status, result) {
+            if (status === 'complete' && result.geocodes.length) {
+                const startLngLat = result.geocodes[0].location;
+
+                geocoder.getLocation(endAddress, function(status, result) {
+                    if (status === 'complete' && result.geocodes.length) {
+                        const endLngLat = result.geocodes[0].location;
+
+                        // 使用高德地图的驾车路线规划服务
+                        AMap.plugin('AMap.Driving', function() {
+                            const driving = new AMap.Driving({
+                                map: map,
+                                panel: 'panel'
+                            });
+
+                            driving.search(startLngLat, endLngLat, function(status, result) {
+                                if (status === 'complete') {
+                                    console.log('路线规划成功');
+                                } else {
+                                    console.error('路线规划失败：' + result);
+                                }
+                            });
+                        });
+                    }
+                });
+            }
+        });
+    });
+}
+
+// 加载页面时调用函数
+document.addEventListener("DOMContentLoaded", function() {
+    if (selectedId) {
+        loadExcelAndDisplay(selectedId);
+        showTab('tab1');  // 默认显示第一个Tab
+    } else {
+        alert("请提供有效的ID参数");
+    }
+});
+</script>
+
 </body>
 </html>
